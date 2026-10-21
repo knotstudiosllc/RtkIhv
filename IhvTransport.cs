@@ -170,9 +170,17 @@ public sealed unsafe class IhvTransport : IDisposable
                 return (RtkStatus.IHV_UNAVAILABLE, Array.Empty<byte>());
             }
             if (wait == null) return (RtkStatus.OK, Array.Empty<byte>());
-            if (!wait.Task.Wait(timeoutMs))
+            try
             {
-                Log?.Invoke($"cmd 0x{cmd:x4}: no report within {timeoutMs} ms");
+                if (!wait.Task.Wait(timeoutMs))
+                {
+                    Log?.Invoke($"cmd 0x{cmd:x4}: no report within {timeoutMs} ms");
+                    return (RtkStatus.TIMEOUT, Array.Empty<byte>());
+                }
+            }
+            catch (AggregateException)
+            {
+                Log?.Invoke($"cmd 0x{cmd:x4}: wait abandoned");
                 return (RtkStatus.TIMEOUT, Array.Empty<byte>());
             }
             return (RtkStatus.OK, wait.Task.Result);
