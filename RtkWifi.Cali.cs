@@ -24,7 +24,11 @@ public sealed partial class RtkWifi
         var channels = Config.CaliCenterChannels.ToArray();
         int levels = Math.Min(Config.CaliThermalLevels, 4);
         var budget = TimeSpan.FromMilliseconds(Math.Max(0, Config.CaliTimeoutMs - 350));
-        _cali = Task.Run(() => RunCalibration(channels, levels, budget, cts.Token));
+        _cali = Task.Run(() =>
+        {
+            try { RunCalibration(channels, levels, budget, cts.Token); }
+            catch (OperationCanceledException) { L("calibration stopped"); }
+        });
         return RtkStatus.PENDING;
     }
 
@@ -47,7 +51,12 @@ public sealed partial class RtkWifi
                     CalibrationStep?.Invoke(ch, level, CaliOutcome.Skipped);
                     continue;
                 }
-                var (st, rpt) = Send(Cmd.TriggerChnlRfk, 1, Bytes.U32((uint)ch, (uint)level), timeoutMs: 300_000);
+                // holds the gate for the whole step: the driver takes no other set until it reports
+                if (!_gate.Wait(GateWait, ct)) return;
+                (uint st, byte[] rpt) r;
+                try { r = SendUngated(Cmd.TriggerChnlRfk, 1, Bytes.U32((uint)ch, (uint)level), timeoutMs: 300_000); }
+                finally { _gate.Release(); }
+                var (st, rpt) = r;
                 if (ct.IsCancellationRequested) return;
                 bool ok = st == RtkStatus.OK && rpt.Length > 0 && rpt[0] == 0;
                 if (!ok) skip.Add(ch);
@@ -59,15 +68,20 @@ public sealed partial class RtkWifi
     }
 
     /// <summary>
-    /// Stops issuing calibration steps and stops waiting for the one in flight. Unlike the DLL
-    /// (which answers busy until that report arrives), later commands can be sent right away.
+    /// Stops issuing calibration steps and lets the one in flight finish (the driver rejects other
+    /// sets until it reports; steps took under 10 s on the DWA-F18). After <paramref name="wait"/>
+    /// the step is abandoned, and commands may then fail until the driver finishes it.
     /// </summary>
-    public void StopCalibration()
+    public void StopCalibration(TimeSpan? wait = null)
     {
         if (_caliCts == null) return;
         _caliCts.Cancel();
-        _t?.Abandon(Cmd.TriggerChnlRfk);
-        _cali?.Wait(TimeSpan.FromSeconds(5));
+        if (_cali != null && !_cali.Wait(wait ?? TimeSpan.FromSeconds(60)))
+        {
+            L("calibration step still running; abandoning it");
+            _t?.Abandon(Cmd.TriggerChnlRfk);
+            _cali.Wait(TimeSpan.FromSeconds(5));
+        }
         _caliCts = null;
         _cali = null;
     }

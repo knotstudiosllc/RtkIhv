@@ -127,6 +127,17 @@ public sealed unsafe class IhvTransport : IDisposable
                 query ? (uint)buf.Length : 0, query ? p : null, &ret);
     }
 
+    /// <summary>
+    /// Maps a WlanIhvControl error: ERROR_NOT_READY means the driver is busy (a calibration step is
+    /// running), anything else means the IHV path itself is unavailable.
+    /// </summary>
+    public static uint ToStatus(uint win32) => win32 switch
+    {
+        0 => RtkStatus.OK,
+        Native.ERROR_NOT_READY => RtkStatus.BUSY,
+        _ => RtkStatus.IHV_UNAVAILABLE,
+    };
+
     /// <summary>Set OID. Returns the WlanIhvControl error (0 = sent).</summary>
     public uint Set(uint oid, ReadOnlySpan<byte> payload) => Transmit(Envelope(ReqSet, oid, payload), query: false);
 
@@ -163,7 +174,7 @@ public sealed unsafe class IhvTransport : IDisposable
             if (rc != 0)
             {
                 Log?.Invoke($"cmd 0x{cmd:x4}: WlanIhvControl error {rc}");
-                return (RtkStatus.IHV_UNAVAILABLE, Array.Empty<byte>());
+                return (ToStatus(rc), Array.Empty<byte>());
             }
             if (wait == null) return (RtkStatus.OK, Array.Empty<byte>());
             try

@@ -31,12 +31,37 @@ public sealed partial class RtkWifi : IDisposable
 
     void L(string s) => Log?.Invoke(s);
 
+    // While a calibration step (0x800C) is in flight the driver refuses every other set with
+    // ERROR_NOT_READY, so commands take turns, as with the DLL's single outstanding command.
+    readonly SemaphoreSlim _gate = new(1, 1);
+    static readonly TimeSpan GateWait = TimeSpan.FromSeconds(310); // one calibration step can take 300 s
+
     (uint status, byte[] rpt) Send(ushort cmd, uint b, byte[] input, int timeoutMs = 10_000)
+    {
+        if (!_gate.Wait(GateWait)) return (RtkStatus.BUSY, Array.Empty<byte>());
+        try { return SendUngated(cmd, b, input, timeoutMs); }
+        finally { _gate.Release(); }
+    }
+
+    (uint status, byte[] rpt) SendUngated(ushort cmd, uint b, byte[] input, int timeoutMs)
     {
         if (_t == null) return (RtkStatus.NOT_INITIALIZED, Array.Empty<byte>());
         var (st, rpt) = _t.Custom(cmd, b, input, timeoutMs);
         L($"  cmd 0x{cmd:x4} in={Bytes.Hex(input)} -> {RtkStatus.Name(st)}{(rpt.Length > 0 ? " rpt=" + Bytes.Hex(rpt) : "")}");
         return (st, rpt);
+    }
+
+    uint SetOid(uint oid, uint value)
+    {
+        if (_t == null) return RtkStatus.NOT_INITIALIZED;
+        if (!_gate.Wait(GateWait)) return RtkStatus.BUSY;
+        try
+        {
+            uint rc = _t.Set(oid, Bytes.U32(value));
+            L($"  OID 0x{oid:x8} = {value} -> {rc}");
+            return IhvTransport.ToStatus(rc);
+        }
+        finally { _gate.Release(); }
     }
 
     /// <summary>Send, then require the report's first value to equal <paramref name="expect"/>.</summary>
@@ -107,9 +132,7 @@ public sealed partial class RtkWifi : IDisposable
         if (SendExpect(Cmd.BeaconOptIe, 0, new[] { c.BeaconIeBits }) != RtkStatus.OK) L("ConfigSoftAp: beacon IE config failed");
         if (SendExpect(Cmd.BeaconOpChannel, 0, Bytes.U32((uint)c.OpChannel, (uint)c.BandWidth, (uint)c.BandType)) != RtkStatus.OK)
             L("ConfigSoftAp: op channel config failed");
-        uint rc = _t.Set(Oid.SoftApAutoChannel, Bytes.U32(1));
-        L($"  OID 0x{Oid.SoftApAutoChannel:x8} = 1 -> {rc}");
-        return rc == 0 ? RtkStatus.OK : RtkStatus.IHV_UNAVAILABLE;
+        return SetOid(Oid.SoftApAutoChannel, 1);
     }
 
     /// <summary>OID 0xFF010314. Layout: u32 band, u32 ?, u8 channel at +8, u32 width at +12.</summary>
@@ -126,8 +149,7 @@ public sealed partial class RtkWifi : IDisposable
     {
         StopCalibration();
         if (_t == null) return RtkStatus.OK;
-        uint rc = _t.Set(Oid.SoftApAutoChannel, Bytes.U32(0));
-        L($"  OID 0x{Oid.SoftApAutoChannel:x8} = 0 -> {rc}");
+        SetOid(Oid.SoftApAutoChannel, 0);
         _t.Dispose();
         _t = null;
         FbEnabled = false;

@@ -8,7 +8,7 @@ static unsafe class Native
     public const uint WLAN_NOTIFICATION_SOURCE_NONE = 0;
     public const uint WLAN_NOTIFICATION_SOURCE_IHV = 0x40;
     public const uint wlan_ihv_control_type_driver = 1;
-    public const uint ERROR_NOT_FOUND = 0x490, ERROR_SERVICE_NOT_ACTIVE = 0x426;
+    public const uint ERROR_NOT_READY = 21, ERROR_NOT_FOUND = 0x490, ERROR_SERVICE_NOT_ACTIVE = 0x426;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct WLAN_INTERFACE_INFO

@@ -1,6 +1,6 @@
 // RtkIhvTest: checks RtkIhv against the bytes traced from Meta's RealtekWiFi.dll.
 //   RtkIhvTest selftest [meta_rtk_config.json]        offline: envelopes and config parsing
-//   RtkIhvTest run [log] [--with-hotspot] [--no-usb-switch] [--fb-seconds N]
+//   RtkIhvTest run [log] [--with-hotspot] [--no-usb-switch] [--fb-seconds N] [--edca]
 //                                                      drives the dongle through Air Bridge's sequence
 using RtkIhv;
 
@@ -97,6 +97,9 @@ static class Program
         }
 
         Log($"<== FBFeatureConfig(1) {RtkStatus.Name(rtk.FbFeatureConfig(true))}");
+        if (args.Contains("--edca"))
+            foreach (var e in rtk.Config.Edca)
+                Log($"<== SetEdcaParam {e} {RtkStatus.Name(rtk.SetEdcaParam(e))}");
         Thread.Sleep(fbSeconds * 1000);
         Log($"<== GetCurrentChannel {rtk.GetCurrentChannel()}");
         Log($"<== FBFeatureConfig(0) {RtkStatus.Name(rtk.FbFeatureConfig(false))}");
