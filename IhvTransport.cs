@@ -14,7 +14,7 @@ public sealed unsafe class IhvTransport : IDisposable
     public const uint OID_CUSTOM_CMD = 0xFF0106A4;
 
     const uint Signature = 0x814CE000;      // Realtek OUI 00:E0:4C + 0x81
-    const uint ReqQuery = 7, ReqSet = 8;
+    public const uint ReqQuery = 7, ReqSet = 8;
     const int HeaderLen = 0x28;
     const uint RptEvent = 0xFF008000;       // first dword of every Realtek IHV notification
     const uint RptCustomCmd = 0x00270000;   // third dword when the notification is a custom-command report
@@ -80,7 +80,8 @@ public sealed unsafe class IhvTransport : IDisposable
         finally { Native.WlanCloseHandle(h, IntPtr.Zero); }
     }
 
-    static byte[] Envelope(uint type, uint oid, ReadOnlySpan<byte> payload)
+    /// <summary>The request WlanIhvControl receives (public so tests can compare it with traced bytes).</summary>
+    public static byte[] Envelope(uint type, uint oid, ReadOnlySpan<byte> payload)
     {
         int total = HeaderLen + payload.Length;
         var buf = new byte[total];
@@ -144,12 +145,7 @@ public sealed unsafe class IhvTransport : IDisposable
     /// </summary>
     public (uint status, byte[] report) Custom(ushort cmd, uint b, ReadOnlySpan<byte> input, int timeoutMs = 10_000, uint a = 1)
     {
-        var payload = new byte[16 + input.Length];
-        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(0), cmd);
-        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), a);
-        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8), b);
-        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(12), (uint)input.Length);
-        input.CopyTo(payload.AsSpan(16));
+        var payload = CustomPayload(cmd, a, b, input);
 
         TaskCompletionSource<byte[]>? wait = null;
         if (timeoutMs >= 0)
@@ -189,6 +185,17 @@ public sealed unsafe class IhvTransport : IDisposable
         {
             if (wait != null) lock (_lock) _pending.Remove(cmd);
         }
+    }
+
+    public static byte[] CustomPayload(ushort cmd, uint a, uint b, ReadOnlySpan<byte> input)
+    {
+        var payload = new byte[16 + input.Length];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(0), cmd);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(4), a);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(8), b);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(12), (uint)input.Length);
+        input.CopyTo(payload.AsSpan(16));
+        return payload;
     }
 
     /// <summary>Drops a pending wait so that cmd can be sent again (the driver may still answer the old one).</summary>

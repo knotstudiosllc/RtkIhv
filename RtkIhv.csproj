@@ -9,4 +9,9 @@
     <AssemblyName>RtkIhv</AssemblyName>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Compile Remove="RtkIhvTest/**" />
+    <None Remove="RtkIhvTest/**" />
+  </ItemGroup>
+
 </Project>
