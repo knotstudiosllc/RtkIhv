@@ -19,6 +19,7 @@ static class Program
     {
         if (args.FirstOrDefault() == "selftest") return SelfTest(args.Skip(1).FirstOrDefault());
         if (args.FirstOrDefault() == "run") return Run(args.Skip(1).ToArray());
+        if (args.FirstOrDefault() == "query") return Query();
         Console.WriteLine("usage: RtkIhvTest selftest [json] | run [log] [--with-hotspot] [--no-usb-switch] [--fb-seconds N]");
         return 2;
     }
@@ -59,6 +60,19 @@ static class Program
     }
 
     static byte[] Bytes32(uint v) => BitConverter.GetBytes(v);
+
+    // Read-only: safe while Air Bridge owns the dongle. Exits without Deinitialize, which would
+    // turn soft-AP mode off under the running app.
+    static int Query()
+    {
+        var rtk = new RtkWifi();
+        rtk.Log += Log;
+        uint rc = rtk.Initialize();
+        if (rc != RtkStatus.OK) { Log($"<== Initialize {RtkStatus.Name(rc)}"); return 1; }
+        Log($"<== {rtk.Snapshot()}");
+        Environment.Exit(0);
+        return 0;
+    }
 
     static int Run(string[] args)
     {

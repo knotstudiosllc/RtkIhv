@@ -145,6 +145,19 @@ public sealed partial class RtkWifi : IDisposable
         return new ChannelInfo((int)Bytes.ReadU32(buf, 0), buf[8], (int)Bytes.ReadU32(buf, 12), buf);
     }
 
+    /// <summary>Read-only dump of the FB-related driver state (queries only; changes nothing).</summary>
+    public string Snapshot()
+    {
+        if (_t == null) return "not initialized";
+        uint U(ushort cmd, uint b, byte[] input, int off = 0) => Send(cmd, b, input) is (RtkStatus.OK, var r) ? Bytes.ReadU32(r, off) : uint.MaxValue;
+        var ch = GetCurrentChannel();
+        return $"fb={U(Cmd.FBFeatureQuery, 1, Bytes.U32(0))} ch={ch?.Channel} bw={ch?.WidthMhz} " +
+               $"pd_thr={U(Cmd.GetPdThr, 1, Bytes.U32(0))} pop={U(Cmd.GetPop, 1, Bytes.U32(0xFF))} " +
+               $"ampdu=({U(Cmd.GetAmpduCfg, 0, new byte[8])},{U(Cmd.GetAmpduCfg, 0, new byte[8], 4)}) " +
+               $"amsdu={U(Cmd.GetAmsduCfg, 0, new byte[8])} txmask=0x{U(Cmd.GetTxMcsMask, 1, Bytes.U32(0)):x} " +
+               $"cus_chlist={U(Cmd.IsUseCustomChnlList, 1, Bytes.U32(0))}";
+    }
+
     public uint Deinitialize()
     {
         StopCalibration();
