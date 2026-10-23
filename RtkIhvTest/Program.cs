@@ -83,6 +83,9 @@ static class Program
         int fbSeconds = 5;
         int i = Array.IndexOf(args, "--fb-seconds");
         if (i >= 0 && i + 1 < args.Length) fbSeconds = int.Parse(args[i + 1]);
+        int preFbSeconds = 3;
+        i = Array.IndexOf(args, "--pre-fb-seconds");
+        if (i >= 0 && i + 1 < args.Length) preFbSeconds = int.Parse(args[i + 1]);
 
         using var rtk = new RtkWifi();
         rtk.Log += Log;
@@ -94,7 +97,7 @@ static class Program
         if (rc != RtkStatus.OK) return 1;
         if (!skipUsb) Log($"<== UsbSwitch {rtk.UsbSwitchAsync().GetAwaiter().GetResult()}");
         Log($"<== GetCurrentChannel {rtk.GetCurrentChannel()}");
-        Log($"<== ConfigSoftAp {RtkStatus.Name(rtk.ConfigSoftAp())}");
+        if (!args.Contains("--no-config-softap")) Log($"<== ConfigSoftAp {RtkStatus.Name(rtk.ConfigSoftAp())}");
 
         System.Diagnostics.Process? ap = null;
         if (hotspot)
@@ -107,10 +110,10 @@ static class Program
             string? line = ap.StandardOutput.ReadLine();
             Log($"hotspot: {line}");
             if (line == null || !line.Contains("started")) { ap = null; Log("hotspot did not start"); }
-            else Thread.Sleep(3000);
+            else Thread.Sleep(preFbSeconds * 1000);
         }
 
-        Log($"<== FBFeatureConfig(1) {RtkStatus.Name(rtk.FbFeatureConfig(true))}");
+        if (!args.Contains("--no-fb")) Log($"<== FBFeatureConfig(1) {RtkStatus.Name(rtk.FbFeatureConfig(true))}");
         if (args.Contains("--edca"))
             foreach (var e in rtk.Config.Edca)
                 Log($"<== SetEdcaParam {e} {RtkStatus.Name(rtk.SetEdcaParam(e))}");
