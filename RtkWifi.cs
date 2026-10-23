@@ -96,7 +96,33 @@ public sealed partial class RtkWifi : IDisposable
         L($"Initialize: driver custom-cmd version 0x{DriverVersion:x8}");
         var (_, fb) = Send(Cmd.FBFeatureQuery, 1, Bytes.U32(0));
         FbEnabled = Bytes.ReadU32(fb) == 1;
+        if (FbEnabled)
+        {
+            // FB left on by an earlier session (a kill, a crash, a replug mid-run). The DLL logs
+            // "PREV_CFG_EXIST. Trying to recover.", turns FB off, waits a second and queries again.
+            // It fails Initialize if FB is still on; we report it through FbEnabled instead.
+            L("Initialize: FB mode left on by a previous session; turning it off");
+            FbFeatureConfig(false);
+            Thread.Sleep(1000);
+            (_, fb) = Send(Cmd.FBFeatureQuery, 1, Bytes.U32(0));
+            FbEnabled = Bytes.ReadU32(fb) == 1;
+            if (FbEnabled) { L("Initialize: FB mode is still on"); return RtkStatus.OK; }
+        }
+        DisconnectStation("Initialize");
         return RtkStatus.OK;
+    }
+
+    /// <summary>
+    /// WlanDisconnect on the dongle (the DLL's sub_2f470, also exported as RealtekWiFiWlanDisconnect).
+    /// The DLL calls it at the end of Initialize and ConfigSoftAp and before FB(1): a station
+    /// connection on the same radio (Windows reconnecting the dongle to a home network) holds it
+    /// on that network's channel, and the AP pinned to another channel then never beacons.
+    /// </summary>
+    void DisconnectStation(string step)
+    {
+        if (_t == null) return;
+        uint d = _t.Disconnect();
+        L($"{step}: WlanDisconnect -> {d}");
     }
 
     /// <summary>
@@ -132,7 +158,9 @@ public sealed partial class RtkWifi : IDisposable
         if (SendExpect(Cmd.BeaconOptIe, 0, new[] { c.BeaconIeBits }) != RtkStatus.OK) L("ConfigSoftAp: beacon IE config failed");
         if (SendExpect(Cmd.BeaconOpChannel, 0, Bytes.U32((uint)c.OpChannel, (uint)c.BandWidth, (uint)c.BandType)) != RtkStatus.OK)
             L("ConfigSoftAp: op channel config failed");
-        return SetOid(Oid.SoftApAutoChannel, 1);
+        uint rc = SetOid(Oid.SoftApAutoChannel, 1);
+        DisconnectStation("ConfigSoftAp");
+        return rc;
     }
 
     /// <summary>OID 0xFF010314. Layout: u32 band, u32 ?, u8 channel at +8, u32 width at +12.</summary>

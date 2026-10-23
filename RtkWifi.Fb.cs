@@ -12,11 +12,7 @@ public sealed partial class RtkWifi
     {
         if (_t == null) return RtkStatus.NOT_INITIALIZED;
         L($"FBFeatureConfig({(enable ? 1 : 0)})");
-        if (enable)
-        {
-            uint d = _t.Disconnect(); // the DLL drops any station connection first
-            if (d != 0) L($"  WlanDisconnect -> {d}");
-        }
+        if (enable) DisconnectStation("  FBFeatureConfig");
         var ch = GetCurrentChannel();
         if (ch != null) L($"  cur_ch({ch.Channel}) cur_bw({ch.Width})");
 
