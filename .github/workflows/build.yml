@@ -1,0 +1,25 @@
+name: Build
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build
+        run: dotnet build RtkIhvTest/RtkIhvTest.csproj -c Release
+
+      # Offline checks only (envelope bytes and config parsing); nothing here needs the dongle.
+      # Run through the dotnet host, since the exe's manifest asks for elevation.
+      - name: Self-test
+        run: dotnet RtkIhvTest/bin/Release/net10.0-windows/RtkIhvTest.dll selftest
